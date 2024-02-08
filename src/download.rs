@@ -5,6 +5,8 @@ use crate::version::{Interpreter, Version};
 use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use std::fs::File;
+use std::io;
+use std::io::Read;
 use std::path::Path;
 use tar::Archive;
 use url::Url;
@@ -59,7 +61,7 @@ fn download_cpython(version: &Version, upgrade: bool) -> Result<(), Error> {
     if upgrade || !path.exists() {
         download_file(python.url, &path)?;
     }
-    extract_tar_gz(&path, &python_dir)?;
+    extract_tar_gz(&path, &python_dir, GzDecoder::new)?;
     Ok(())
 }
 
@@ -85,7 +87,7 @@ fn download_pypy(version: &Version, upgrade: bool) -> Result<(), Error> {
     if upgrade || !path.exists() {
         download_file(python.url, &path)?;
     }
-    extract_tar_bz2(&path, &python_dir)?;
+    extract_tar_bz2(&path, &python_dir, File::open(source)?)?;
     Ok(())
 }
 
@@ -100,18 +102,29 @@ fn download_file(url: Url, target: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-fn extract_tar_gz(source: &Path, target: &Path) -> Result<(), std::io::Error> {
+fn extract_tar_gz(source: &Path, target: &Path, decoder: dyn Fn(impl Read) -> Read) -> Result<(), std::io::Error> {
     let tar_gz = File::open(source)?;
-    let tar = GzDecoder::new(tar_gz);
+    let tar = decoder(tar_gz);
+    //let tar = GzDecoder::new(tar_gz);
     let mut archive = Archive::new(tar);
     archive.unpack(target)?;
     Ok(())
 }
 
-fn extract_tar_bz2(source: &Path, target: &Path) -> Result<(), std::io::Error> {
-    let tar_gz = File::open(source)?;
+fn extract_tar_bz2(source: &Path, target: &Path, file: File) -> Result<(), std::io::Error> {
+    let tar_gz = file;
     let tar = BzDecoder::new(tar_gz);
     let mut archive = Archive::new(tar);
     archive.unpack(target)?;
+    Ok(())
+}
+
+// pub fn unpack<P: AsRef<Path>>(&mut self, dst: P) -> io::Result<()> {
+fn generic(source: &Path, target: &Path, extractor: fn(in) -> io::Result<()>) -> Result<(), std::io::Error> {
+    let tar_gz = File::open(source)?;
+    let tar = BzDecoder::new(tar_gz);
+    let mut archive = Archive::new(tar);
+    extractor(target)?
+    //archive.unpack(target)?;
     Ok(())
 }
